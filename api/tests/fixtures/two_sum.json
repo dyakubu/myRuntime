@@ -1,0 +1,65 @@
+{
+  "problem": {
+    "title": "Two Sum",
+    "difficulty": "easy",
+    "topics": ["array", "hash-map"],
+    "normalized_statement": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target."
+  },
+  "function_signature": {
+    "name": "two_sum",
+    "parameters": [
+      { "name": "nums", "type": "List[int]" },
+      { "name": "target", "type": "int" }
+    ],
+    "return_type": "List[int]"
+  },
+  "constraints": {
+    "raw": "2 <= nums.length <= 10^4, -10^9 <= nums[i] <= 10^9",
+    "input_bounds": {
+      "nums": { "length_min": 2, "length_max": 10000, "value_min": -1000000000, "value_max": 1000000000 },
+      "target": { "value_min": -2000000000, "value_max": 2000000000 }
+    }
+  },
+  "reference_solution": {
+    "language": "python",
+    "code": "def two_sum(nums, target):\n    seen = {}\n    for i, n in enumerate(nums):\n        if target - n in seen:\n            return [seen[target - n], i]\n        seen[n] = i\n    return []",
+    "expected_time_complexity": "O(n)",
+    "expected_space_complexity": "O(n)"
+  },
+  "test_cases": [
+    {
+      "id": "example_1",
+      "category": "example",
+      "description": "given example from the problem statement",
+      "input_mode": "literal",
+      "input": { "nums": [2, 7, 11, 15], "target": 9 }
+    },
+    {
+      "id": "edge_duplicates",
+      "category": "edge",
+      "description": "duplicate values, correct pair must use distinct indices",
+      "input_mode": "literal",
+      "input": { "nums": [3, 3], "target": 6 }
+    },
+    {
+      "id": "stress_large_n",
+      "category": "stress",
+      "description": "n at upper bound, checks O(n) vs O(n^2) in practice",
+      "input_mode": "generated",
+      "generator": {
+        "type": "random_int_array",
+        "param": "nums",
+        "length": 10000,
+        "value_range": [-1000000000, 1000000000],
+        "seed": 42
+      },
+      "fixed_params": { "target": 999999998 }
+    }
+  ],
+  "generation_meta": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "prompt_version": "v1",
+    "warnings": []
+  }
+}
