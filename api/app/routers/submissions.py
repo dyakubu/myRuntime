@@ -42,7 +42,19 @@ def submit(payload: SubmissionRequest) -> SubmissionResponse:
                 runtime_s=runtime_s,
             )
         )
-        log_metric("test_case_result", result="pass" if passed else "fail")
+        if passed:
+            log_metric("test_case_result", result="pass", case_id=case.id)
+        else:
+            log_metric(
+                "test_case_result",
+                level="error",
+                result="fail",
+                case_id=case.id,
+                input=case.input,
+                error=result.error,
+                actual_output=result.result if result.ok else None,
+                expected_output=case.expected_output,
+            )
 
     duration = time.perf_counter() - total_start
     log_metric("sandbox_execution", endpoint="submissions", duration_s=round(duration, 4))

@@ -52,6 +52,11 @@ def verify(payload: VerifyRequest) -> VerifyResponse:
             )
             log_metric(
                 "solution_self_check_error",
+                level="error",
+                case_id=case.id,
+                category=case.category,
+                error=result.error,
+                input=args,
                 topic=(payload.problem or {}).get("topics", [None])[0] if payload.problem else None,
                 difficulty=(payload.problem or {}).get("difficulty") if payload.problem else None,
             )
