@@ -10,4 +10,6 @@ class CloudRunSandboxRunner(SandboxRunner):
     """
 
     def _command(self) -> list[str]:
-        return ["sandbox", "do", "--", "python3", str(HARNESS_PATH)]
+        # Sandboxes don't inherit the host container's env (including PATH), so the
+        # interpreter must be an absolute path rather than a bare "python3" lookup.
+        return ["sandbox", "do", "--", "/usr/bin/python3", str(HARNESS_PATH)]
