@@ -39,7 +39,9 @@ This is a **self-check**, not cross-verification: it confirms the reference solu
 
 Python-only type strings throughout (`int`, `float`, `str`, `bool`, `List[int]`, `List[List[int]]`, `Dict[str,int]`).
 
-Provider and model are chosen by the user from a restricted dropdown (Anthropic or Gemini — see `myruntime-v0-spec.md` §5); the prompt sent to whichever model is selected asks it to return exactly this JSON shape:
+Provider and model are chosen by the user from a restricted dropdown (Anthropic or Gemini — see `myruntime-v0-spec.md` §5); the prompt sent to whichever model is selected asks it to return exactly this JSON shape.
+
+Test cases are all `"literal"` for now: exactly 3 `"example"` cases plus as many `"edge"` cases as the model can find (general — empty/single-element/all-duplicate/min-max/negative/etc. — and problem-specific), each with a one-line `"description"` of what it's meant to catch. `"stress"`/`"generated"` cases are paused out of the prompt while a better way to exercise time complexity is decided (a single huge generated array only proves the reference solution finishes inside the sandbox timeout, and its materialized input round-trips back to the browser in full in the `/api/verify` response — not a great signal, and not free). The `generated`/`GeneratorSpec` machinery in Stage 2 below is left in place either way.
 
 ```json
 {
@@ -84,20 +86,6 @@ Provider and model are chosen by the user from a restricted dropdown (Anthropic 
       "description": "duplicate values, correct pair must use distinct indices",
       "input_mode": "literal",
       "input": { "nums": [3, 3], "target": 6 }
-    },
-    {
-      "id": "stress_large_n",
-      "category": "stress",
-      "description": "n at upper bound, checks O(n) vs O(n^2) in practice",
-      "input_mode": "generated",
-      "generator": {
-        "type": "random_int_array",
-        "param": "nums",
-        "length": 10000,
-        "value_range": [-1000000000, 1000000000],
-        "seed": 42
-      },
-      "fixed_params": { "target": 999999998 }
     }
   ],
   "generation_meta": {

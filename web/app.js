@@ -8,6 +8,7 @@
 
   const { Settings, Cache } = window.MyRuntimeStorage;
   const PROVIDERS = window.MyRuntimeProviders;
+  const generateContract = window.MyRuntimeGenerate;
 
   const el = (id) => document.getElementById(id);
   const els = {
@@ -204,6 +205,11 @@
     elm.className = "hint" + (kind ? ` ${kind}` : "");
   }
 
+  function flattenDetail(detail) {
+    if (Array.isArray(detail)) return detail.join("; ");
+    return detail;
+  }
+
   async function runVerify(contract) {
     const resp = await fetch(`${API_BASE}/api/verify`, {
       method: "POST",
@@ -212,9 +218,22 @@
     });
     if (!resp.ok) {
       const body = await resp.json().catch(() => null);
-      throw new Error(`verify failed: ${resp.status} ${body?.detail ? JSON.stringify(body.detail) : resp.statusText}`);
+      const detail = flattenDetail(body?.detail);
+      throw new Error(`verify failed: ${resp.status}${detail ? ` — ${detail}` : ` ${resp.statusText}`}`);
     }
     return resp.json();
+  }
+
+  async function cacheAndRender(hash, contract, suite, statusMessage) {
+    state.contract = contract;
+    state.suite = suite;
+    await Cache.set(hash, { contract, suite });
+    renderProblem();
+    setStatus(
+      els.generateStatus,
+      statusMessage ?? `Done. ${suite.verified_count}/${suite.total_count} test cases checked.`,
+      suite.verification_status === "ok" ? "success" : "error"
+    );
   }
 
   async function processContract(contract, cacheKeyText) {
@@ -230,15 +249,7 @@
 
     setStatus(els.generateStatus, "Checking reference solution in sandbox...", "");
     const suite = await runVerify(contract);
-    state.contract = contract;
-    state.suite = suite;
-    await Cache.set(hash, { contract, suite });
-    renderProblem();
-    setStatus(
-      els.generateStatus,
-      `Done. ${suite.verified_count}/${suite.total_count} test cases checked.`,
-      suite.verification_status === "ok" ? "success" : "error"
-    );
+    await cacheAndRender(hash, contract, suite);
   }
 
   async function onGenerate() {
@@ -256,10 +267,36 @@
 
     els.generateBtn.disabled = true;
     try {
-      setStatus(els.generateStatus, `Generating with ${provider.label}...`, "");
-      const raw = await provider.generate({ apiKey, model, problemText });
-      const contract = validateContract(raw);
-      await processContract(contract, problemText);
+      const hash = await Cache.hashOf(problemText);
+      const cached = await Cache.get(hash);
+      if (cached) {
+        state.contract = cached.contract;
+        state.suite = cached.suite;
+        renderProblem();
+        setStatus(els.generateStatus, "Loaded from cache.", "success");
+        return;
+      }
+
+      const { contract, suite } = await generateContract({
+        provider,
+        apiKey,
+        model,
+        problemText,
+        verify: async (parsed) => {
+          validateContract(parsed);
+          return runVerify(parsed);
+        },
+        onStatus: (attempt, maxAttempts) => {
+          setStatus(
+            els.generateStatus,
+            attempt === 1
+              ? `Generating with ${provider.label}...`
+              : `Model output needed a fix — retrying with ${provider.label} (attempt ${attempt}/${maxAttempts})...`,
+            ""
+          );
+        },
+      });
+      await cacheAndRender(hash, contract, suite);
     } catch (err) {
       setStatus(els.generateStatus, err.message || String(err), "error");
     } finally {
@@ -448,7 +485,8 @@
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => null);
-        throw new Error(`run failed: ${resp.status} ${body?.detail ? JSON.stringify(body.detail) : resp.statusText}`);
+        const detail = flattenDetail(body?.detail);
+        throw new Error(`run failed: ${resp.status}${detail ? ` — ${detail}` : ` ${resp.statusText}`}`);
       }
       const result = await resp.json();
       renderResults(result);

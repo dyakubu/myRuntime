@@ -2,7 +2,9 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import CORS_ORIGINS
@@ -17,6 +19,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Default pydantic errors are a deeply nested detail array — fine for a developer,
+    # unreadable dropped straight into a status line. Flatten to "field.path: message"
+    # strings so the frontend (and generateContract()'s retry-feedback loop) has
+    # something a human, or a model correcting its own output, can act on directly.
+    errors = [f"{'.'.join(str(p) for p in err['loc'] if p != 'body')}: {err['msg']}" for err in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.middleware("http")

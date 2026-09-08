@@ -31,7 +31,7 @@ class GeneratorSpec(BaseModel):
 
 class TestCase(BaseModel):
     id: str
-    category: str
+    category: Literal["example", "edge", "stress"]
     description: str | None = None
     input_mode: Literal["literal", "generated"]
     input: dict[str, Any] | None = None
