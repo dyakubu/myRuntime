@@ -8,10 +8,21 @@ class Parameter(BaseModel):
     type: str
 
 
+class MethodSignature(BaseModel):
+    name: str
+    parameters: list[Parameter]
+    return_type: str
+
+
 class FunctionSignature(BaseModel):
     name: str
     parameters: list[Parameter]
     return_type: str
+    # "class" problems (Graph, LRU Cache, Trie, ...) construct one instance via `name`
+    # (parameters as constructor kwargs) and exercise it through `methods` — see
+    # `Operation` below. Everything defaults to plain-function behavior unchanged.
+    kind: Literal["function", "class"] = "function"
+    methods: list[MethodSignature] | None = None
 
 
 class ReferenceSolution(BaseModel):
@@ -29,6 +40,14 @@ class GeneratorSpec(BaseModel):
     seed: int
 
 
+class Operation(BaseModel):
+    """One method call in a stateful test case's sequence, run against the instance
+    constructed from the TestCase's own `input`."""
+
+    method: str
+    args: dict[str, Any] = {}
+
+
 class TestCase(BaseModel):
     id: str
     category: Literal["example", "edge", "stress"]
@@ -37,6 +56,9 @@ class TestCase(BaseModel):
     input: dict[str, Any] | None = None
     generator: GeneratorSpec | None = None
     fixed_params: dict[str, Any] | None = None
+    # Present only for "class"-kind problems: `input` builds the instance, then each
+    # operation runs against it in order. None/absent means an ordinary function call.
+    operations: list[Operation] | None = None
 
 
 class VerifyRequest(BaseModel):
@@ -48,6 +70,12 @@ class VerifyRequest(BaseModel):
     generation_meta: dict[str, Any] | None = None
 
 
+class VerifiedOperation(BaseModel):
+    method: str
+    args: dict[str, Any] = {}
+    expected_output: Any = None
+
+
 class VerifiedTestCase(BaseModel):
     id: str
     category: str
@@ -55,6 +83,7 @@ class VerifiedTestCase(BaseModel):
     expected_output: Any = None
     verified: bool
     error: str | None = None
+    operations: list[VerifiedOperation] | None = None
 
 
 class VerifyResponse(BaseModel):
@@ -75,6 +104,15 @@ class SubmissionRequest(BaseModel):
     test_cases: list[VerifiedTestCase]
 
 
+class StepResult(BaseModel):
+    method: str
+    args: dict[str, Any] = {}
+    expected_output: Any = None
+    actual_output: Any = None
+    passed: bool
+    error: str | None = None
+
+
 class TestCaseResult(BaseModel):
     id: str
     passed: bool
@@ -83,6 +121,10 @@ class TestCaseResult(BaseModel):
     actual_output: Any = None
     error: str | None = None
     runtime_s: float
+    # Present only for "class"-kind problems — one entry per operation, in order.
+    # `passed`/`actual_output`/`expected_output`/`error` above remain a case-level
+    # summary (passed = all steps passed) so a client ignoring `steps` still works.
+    steps: list[StepResult] | None = None
 
 
 class SubmissionResponse(BaseModel):
