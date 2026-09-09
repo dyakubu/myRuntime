@@ -1,4 +1,5 @@
 import time
+from typing import Literal
 
 from fastapi import APIRouter
 
@@ -40,11 +41,11 @@ def _grade_operations(
 def submit(payload: SubmissionRequest) -> SubmissionResponse:
     results: list[TestCaseResult] = []
     total_start = time.perf_counter()
+    gradable = [c for c in payload.test_cases if c.verified]
+    status: Literal["ok", "timeout"] = "ok"
+    not_run = 0
 
-    for case in payload.test_cases:
-        if not case.verified:
-            # No known-good expected_output for a case the reference solution errored on.
-            continue
+    for index, case in enumerate(gradable):
 
         case_start = time.perf_counter()
         # is-not-None, not truthiness — see the matching note in verify.py.
@@ -71,6 +72,7 @@ def submit(payload: SubmissionRequest) -> SubmissionResponse:
                     error=case_error,
                     runtime_s=runtime_s,
                     steps=steps,
+                    stdout=result.stdout,
                 )
             )
         else:
@@ -84,6 +86,7 @@ def submit(payload: SubmissionRequest) -> SubmissionResponse:
                     actual_output=result.result if result.ok else None,
                     error=None if result.ok else result.error,
                     runtime_s=runtime_s,
+                    stdout=result.stdout,
                 )
             )
 
@@ -101,8 +104,24 @@ def submit(payload: SubmissionRequest) -> SubmissionResponse:
                 expected_output=case.expected_output,
             )
 
+        # Exceeding the time limit is a property of the submission, not of one case: an
+        # infinite loop will hang every remaining case identically. Stopping here turns
+        # a (timeout x N cases) wait — over two minutes on a typical suite, and past
+        # Cloud Run's request timeout on a large one — into a single timeout.
+        if result.timed_out:
+            status = "timeout"
+            log_metric("submission_timeout", level="error", case_id=case.id, timeout_s=SANDBOX_TIMEOUT_S)
+            not_run = len(gradable) - (index + 1)
+            break
+
     duration = time.perf_counter() - total_start
-    log_metric("sandbox_execution", endpoint="submissions", duration_s=round(duration, 4))
+    log_metric("sandbox_execution", endpoint="submissions", duration_s=round(duration, 4), status=status)
 
     passed_count = sum(1 for r in results if r.passed)
-    return SubmissionResponse(results=results, passed_count=passed_count, total_count=len(results))
+    return SubmissionResponse(
+        results=results,
+        passed_count=passed_count,
+        total_count=len(results),
+        status=status,
+        not_run_count=not_run,
+    )

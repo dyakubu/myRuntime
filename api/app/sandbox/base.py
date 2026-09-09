@@ -12,6 +12,10 @@ class RunResult:
     ok: bool
     result: Any = None
     error: str | None = None
+    # Whatever the executed code print()ed, capped by the harness. Empty when the run
+    # was killed before it could report (a timeout leaves nothing to collect).
+    stdout: str = ""
+    timed_out: bool = False
 
 
 class SandboxRunner:
@@ -48,7 +52,7 @@ class SandboxRunner:
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired:
-            return RunResult(ok=False, error=f"timeout after {timeout}s")
+            return RunResult(ok=False, error=f"timeout after {timeout}s", timed_out=True)
         except FileNotFoundError as exc:
             return RunResult(ok=False, error=f"runner command not found: {exc}")
 
@@ -60,6 +64,7 @@ class SandboxRunner:
         except (ValueError, IndexError):
             return RunResult(ok=False, error=f"malformed output: {proc.stdout!r}")
 
+        stdout = envelope.get("stdout", "")
         if envelope.get("ok"):
-            return RunResult(ok=True, result=envelope.get("result"))
-        return RunResult(ok=False, error=envelope.get("error", "unknown error"))
+            return RunResult(ok=True, result=envelope.get("result"), stdout=stdout)
+        return RunResult(ok=False, error=envelope.get("error", "unknown error"), stdout=stdout)

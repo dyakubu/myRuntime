@@ -52,6 +52,20 @@ def _run_operations(built: object, operations: list[dict]) -> list[dict]:
     return steps
 
 
+# Solvers debug with print(), so their stdout is reported back rather than discarded.
+# Capped because a runaway loop can emit unbounded output, and the whole envelope has to
+# fit through a pipe and then an HTTP response.
+MAX_STDOUT_CHARS = 10_000
+
+
+def _collect_stdout(captured: io.StringIO) -> str:
+    text = captured.getvalue()
+    if len(text) > MAX_STDOUT_CHARS:
+        dropped = len(text) - MAX_STDOUT_CHARS
+        return text[:MAX_STDOUT_CHARS] + f"\n... [{dropped} more characters truncated]"
+    return text
+
+
 def main() -> None:
     payload = json.loads(sys.stdin.read())
     code = payload["code"]
@@ -70,9 +84,11 @@ def main() -> None:
             # representable too, and used to fail as an opaque error from json.dumps
             # below rather than something the solver could act on.
             result = _run_operations(built, operations) if operations is not None else _check_returnable(built)
-        print(json.dumps({"ok": True, "result": result}))
+        print(json.dumps({"ok": True, "result": result, "stdout": _collect_stdout(captured)}))
     except Exception as exc:  # noqa: BLE001 - deliberately broad, reports back any failure
-        print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
+        # Whatever was printed before the failure is usually the most useful thing the
+        # solver has, so it ships with the error too.
+        print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}", "stdout": _collect_stdout(captured)}))
 
 
 if __name__ == "__main__":

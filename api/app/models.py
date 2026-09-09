@@ -152,6 +152,9 @@ class TestCaseResult(BaseModel):
     actual_output: Any = None
     error: str | None = None
     runtime_s: float
+    # Anything the submission print()ed, so print-debugging works. Empty on a timeout —
+    # the process is killed before it can report what it had buffered.
+    stdout: str = ""
     # Present only for "class"-kind problems — one entry per operation, in order.
     # `passed`/`actual_output`/`expected_output`/`error` above remain a case-level
     # summary (passed = all steps passed) so a client ignoring `steps` still works.
@@ -162,3 +165,9 @@ class SubmissionResponse(BaseModel):
     results: list[TestCaseResult]
     passed_count: int
     total_count: int
+    # "timeout" means grading stopped early: exceeding the time limit is a property of
+    # the submission, not of one case, so there's nothing to learn from running the
+    # remaining cases and waiting timeout x N seconds to do it.
+    status: Literal["ok", "timeout"] = "ok"
+    # How many cases were sent but never run because grading stopped early.
+    not_run_count: int = 0

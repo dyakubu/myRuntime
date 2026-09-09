@@ -79,17 +79,25 @@ function ResultTab({ results, running }) {
   }
   if (!results) return <p className="hint">Run or submit to see results here.</p>;
 
-  const { passed_count: passed, total_count: total, mode } = results;
-  const allPassed = total > 0 && passed === total;
+  const { passed_count: passed, total_count: total, mode, status, not_run_count: notRun } = results;
+  const timedOut = status === "timeout";
+  const allPassed = !timedOut && total > 0 && passed === total;
 
   return (
     <>
       <div className={`verdict ${allPassed ? "pass" : "fail"}`}>
-        {allPassed ? "Accepted" : "Wrong Answer"}
+        {timedOut ? "Time Limit Exceeded" : allPassed ? "Accepted" : "Wrong Answer"}
         <span className="hint" style={{ marginLeft: "0.6rem", fontWeight: 400 }}>
           {passed}/{total} passed · {mode === "run" ? "examples only" : "full suite"}
+          {timedOut && notRun > 0 && ` · stopped early, ${notRun} not run`}
         </span>
       </div>
+      {timedOut && (
+        <p className="hint">
+          Your solution didn't finish in time on one case, so grading stopped there — it would hang
+          the same way on the rest.
+        </p>
+      )}
       <ResultList results={results.results} />
     </>
   );

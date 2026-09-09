@@ -17,6 +17,15 @@ export default function ResultList({ results }) {
         <span className="hint">{r.runtime_s}s</span>
       </div>
 
+      {/* stdout shows even on a passing case — if you printed something, you want to
+          see it, and that's the whole point of print-debugging. */}
+      {r.stdout && (
+        <div className="result-detail">
+          <span className="lbl">Output:</span>
+          <span className="val">{r.stdout}</span>
+        </div>
+      )}
+
       {!r.passed && (
         <div className="result-detail">
           {r.steps ? (
