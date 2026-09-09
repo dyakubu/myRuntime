@@ -11,21 +11,39 @@ const SYSTEM_PROMPT = `You turn a pasted coding-interview problem into a strict 
 The JSON must have exactly this shape:
 {
   "problem": { "title": string, "difficulty": "easy"|"medium"|"hard", "topics": string[], "normalized_statement": string },
-  "function_signature": { "name": string, "parameters": [{ "name": string, "type": string }], "return_type": string },
+  "function_signature": {
+    "name": string,
+    "kind": "function"|"class",
+    "parameters": [{ "name": string, "type": string }],
+    "return_type": string,
+    "methods": [{ "name": string, "parameters": [{ "name": string, "type": string }], "return_type": string }]
+  },
   "constraints": { "raw": string, "input_bounds": object },
   "reference_solution": { "language": "python", "code": string, "expected_time_complexity": string, "expected_space_complexity": string },
   "test_cases": [
-    { "id": string, "category": "example"|"edge", "description": string, "input_mode": "literal", "input": object }
+    {
+      "id": string,
+      "category": "example"|"edge",
+      "description": string,
+      "input_mode": "literal",
+      "input": object,
+      "operations": [{ "method": string, "args": object }]
+    }
   ],
   "generation_meta": { "provider": string, "model": string, "prompt_version": "v1", "warnings": string[] }
 }
 
 Rules:
-- Python only. Use Python type strings in function_signature (int, float, str, bool, List[int], List[List[int]], Dict[str,int], etc).
-- reference_solution.code must define exactly one top-level function named function_signature.name, with parameters matching function_signature.parameters in order.
-- Include exactly 3 "example" cases: straightforward inputs, the kind given in the problem statement itself or an equally typical case — nothing tricky.
+- Python only. Use Python type strings in function_signature/methods (int, float, str, bool, List[int], List[List[int]], Dict[str,int], etc).
+- Only JSON-native types (int, float, str, bool, list, dict, None, and combinations of these) may appear as a parameter or return type anywhere in function_signature or methods. If the problem is naturally about a node/pointer structure (a tree, a linked list, a graph as an object), represent it as a plain nested list/dict at the boundary (e.g. a level-order array with nulls for a tree) and build/tear down any node objects privately inside reference_solution.code — never require the caller to pass in or receive one of your own classes.
+- Most problems are "function" kind: one pure function, no persistent state. Use "kind": "function", omit "methods", and give every test case an "input" (the call's arguments) with no "operations".
+- Use "kind": "class" ONLY when the problem inherently needs state that persists across multiple calls with no single meaningful return value — e.g. "design a Graph/LRU Cache/Trie/Union-Find". For a "class" problem:
+  - function_signature.name is the class name; function_signature.parameters are the constructor's parameters; function_signature.methods lists every query method the class must support (name, parameters, return_type). Do not include mutation methods unless the problem explicitly asks for them.
+  - Every test case's "input" is the constructor's arguments, and "operations" is the sequence of method calls to run against that one constructed instance, in order — each is { "method": one of function_signature.methods' names, "args": object }. Never include an "expected_output" anywhere — the backend computes each operation's expected result by running reference_solution itself.
+  - reference_solution.code defines the class with __init__ plus every listed method, nothing else.
+- Include exactly 3 "example" cases: straightforward inputs (or, for "class" problems, operation sequences), the kind given in the problem statement itself or an equally typical case — nothing tricky.
 - Then include one "edge" case for every edge case you can think of. Cover general edge cases that apply to inputs of these types — empty input, a single element, all elements equal/duplicated, smallest and largest allowed values, negative numbers, already-sorted or reverse-sorted input, etc., whichever actually apply here — AND edge cases specific to this problem's own logic. Do not cap how many you include; more thorough is better than fewer.
-- Every test case, "example" and "edge" alike, needs a "description" stating in one short, specific phrase what that case is meant to catch (e.g. "negative value in the middle of the array", "target only reachable by using the same element twice"). Do not write vague descriptions like "edge case" or "tests edge condition".
+- Every test case, "example" and "edge" alike, needs a "description" stating in one short, specific phrase what that case (and, for a "class" problem, its operation sequence) is meant to catch (e.g. "negative value in the middle of the array", "query a pair of vertices with no edge between them"). Do not write vague descriptions like "edge case" or "tests edge condition".
 - All test cases use "input_mode": "literal" with a concrete "input" object keyed by parameter name. Do not use "generated"/randomized inputs — every value must be spelled out literally.
 - normalized_statement should be a cleaned-up markdown version of the pasted problem text, not a restatement of these instructions.`;
 
@@ -46,10 +64,12 @@ function extractJson(text) {
 }
 
 // max_tokens/maxOutputTokens headroom: the prompt asks for an uncapped number of edge
-// cases, so a thorough answer can run long — 8192 lowers truncation risk but doesn't
-// rule it out, which is why callModel() below also reports whether a response was cut
-// off so generateContract() can tell "truncated" apart from "just malformed."
-const MAX_OUTPUT_TOKENS = 8192;
+// cases, and "class"-kind problems add a methods list plus a per-case operations
+// sequence on top of that, so a thorough answer can run long. Raising this lowers
+// truncation risk but doesn't rule it out, which is why callModel() below also reports
+// whether a response was cut off so generateContract() can tell "truncated" apart from
+// "just malformed."
+const MAX_OUTPUT_TOKENS = 16384;
 
 const PROVIDERS = {
   anthropic: {

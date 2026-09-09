@@ -97,7 +97,48 @@ Test cases are all `"literal"` for now: exactly 3 `"example"` cases plus as many
 }
 ```
 
-The client validates this shape before doing anything with it (required fields present, `test_cases` non-empty, etc.) — a model that returns malformed JSON should surface a clear "generation failed, try again" error rather than being sent on to `/api/verify`.
+The client validates this shape before doing anything with it (required fields present, `test_cases` non-empty, etc.) — a model that returns malformed JSON should surface a clear "generation failed, try again" error rather than being sent on to `/api/verify`. If it *is* malformed or gets rejected by `/api/verify`, the client retries a bounded number of times, feeding the model its own bad output plus the specific error back as a corrective follow-up turn, before giving up — see `myruntime-v0-spec.md`.
+
+### Stateful (`"class"`-kind) problems
+
+Most problems are `"function"` kind (the shape above): call one function once, compare its return value. Some interview problems — "design a Graph/LRU Cache/Trie/Union-Find" — inherently need state that persists across multiple calls, with no single meaningful return value at all. `function_signature.kind: "class"` covers these: `name` is the class name, `parameters` are the constructor's kwargs, and `methods` lists every query method (`{name, parameters, return_type}`). Each test case's `input` still builds the instance (same as a `"function"` case's call args), but adds `operations`: a `{method, args}` sequence run against that one instance, in order — no `expected_output` anywhere in what the model emits; the backend computes each step's expected result by running `reference_solution` itself, exactly as it does for the top-level `expected_output` in a plain-function case.
+
+```json
+{
+  "function_signature": {
+    "name": "Graph",
+    "kind": "class",
+    "parameters": [
+      { "name": "vertices", "type": "List" },
+      { "name": "edges", "type": "List[tuple]" }
+    ],
+    "return_type": "Graph",
+    "methods": [
+      { "name": "has_edge", "parameters": [{ "name": "u", "type": "Any" }, { "name": "v", "type": "Any" }], "return_type": "bool" },
+      { "name": "get_vertices", "parameters": [], "return_type": "List" }
+    ]
+  },
+  "reference_solution": {
+    "language": "python",
+    "code": "class Graph:\n    def __init__(self, vertices, edges):\n        ...\n\n    def has_edge(self, u, v):\n        ...\n\n    def get_vertices(self):\n        ..."
+  },
+  "test_cases": [
+    {
+      "id": "triangle",
+      "category": "example",
+      "description": "triangle graph, every pair connected",
+      "input_mode": "literal",
+      "input": { "vertices": [1, 2, 3], "edges": [[1, 2], [2, 3], [1, 3]] },
+      "operations": [
+        { "method": "has_edge", "args": { "u": 1, "v": 2 } },
+        { "method": "get_vertices", "args": {} }
+      ]
+    }
+  ]
+}
+```
+
+One rule applies to both kinds: only JSON-native types (`int`/`float`/`str`/`bool`/`list`/`dict`/`None`) may cross a parameter or return boundary — a tree or linked list is represented as a plain nested list, with any node objects built privately inside `reference_solution.code`, never passed in or returned directly.
 
 ---
 
@@ -105,9 +146,9 @@ The client validates this shape before doing anything with it (required fields p
 
 **Request body:** `function_signature`, `reference_solution`, `test_cases` from Stage 1 (the rest of the Stage 1 payload — `problem`, `constraints`, `generation_meta` — is echoed back unchanged; the backend doesn't need it to do the self-check, but round-trips it so the client doesn't have to stitch state back together).
 
-For each test case: materialize the input (literal cases as given; generated cases built from their `generator` spec using the fixed `seed`), then run `reference_solution.code` against it inside a Cloud Run sandbox.
+For each test case: materialize the input (literal cases as given; generated cases built from their `generator` spec using the fixed `seed`), then run `reference_solution.code` against it inside a Cloud Run sandbox — a plain function call for a `"function"`-kind case, or construct-then-run-each-operation for a `"class"`-kind one.
 
-**Ran successfully:**
+**Ran successfully (`"function"`-kind):**
 ```json
 {
   "id": "example_1",
@@ -118,7 +159,7 @@ For each test case: materialize the input (literal cases as given; generated cas
 }
 ```
 
-**Raised or timed out:**
+**Raised or timed out (`"function"`-kind):**
 ```json
 {
   "id": "edge_case_x",
@@ -129,6 +170,32 @@ For each test case: materialize the input (literal cases as given; generated cas
   "error": "IndexError: list index out of range"
 }
 ```
+
+**`"class"`-kind case:** each operation's expected output is filled in the same way, per step, in `operations`. A step that raises stops the sequence there — `operations` ends up shorter than what the model asked for, and `error` names which method failed:
+```json
+{
+  "id": "triangle",
+  "category": "example",
+  "input": { "vertices": [1, 2, 3], "edges": [[1, 2], [2, 3], [1, 3]] },
+  "verified": true,
+  "operations": [
+    { "method": "has_edge", "args": { "u": 1, "v": 2 }, "expected_output": true },
+    { "method": "get_vertices", "args": {}, "expected_output": [1, 2, 3] }
+  ]
+}
+```
+```json
+{
+  "id": "triangle",
+  "verified": false,
+  "error": "has_edge: RuntimeError: boom",
+  "operations": [
+    { "method": "has_edge", "args": { "u": 1, "v": 2 }, "expected_output": true }
+  ]
+}
+```
+
+`/api/submissions` grades a `"class"`-kind case the same way: it re-runs the same `operations` sequence against the submitted class and compares each step's actual output to the `expected_output` already captured above, reporting a `steps` list (`{method, args, expected_output, actual_output, passed, error}`) alongside the case's overall pass/fail.
 
 ## Suite-level status
 

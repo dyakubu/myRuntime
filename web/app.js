@@ -380,11 +380,29 @@
   // ---------- rendering ----------
 
   function formatSignature(sig) {
+    if (sig.kind === "class") {
+      const ctorParams = sig.parameters.map((p) => `${p.name}: ${p.type}`).join(", ");
+      const lines = [`class ${sig.name}:`, `    def __init__(self, ${ctorParams}):`];
+      for (const m of sig.methods || []) {
+        const params = m.parameters.map((p) => `${p.name}: ${p.type}`).join(", ");
+        lines.push(`    def ${m.name}(self${params ? ", " + params : ""}) -> ${m.return_type}:`);
+      }
+      return lines.join("\n");
+    }
     const params = sig.parameters.map((p) => `${p.name}: ${p.type}`).join(", ");
     return `def ${sig.name}(${params}) -> ${sig.return_type}:`;
   }
 
   function stubCode(sig) {
+    if (sig.kind === "class") {
+      const ctorParams = sig.parameters.map((p) => p.name).join(", ");
+      const lines = [`class ${sig.name}:`, `    def __init__(self, ${ctorParams}):`, `        # your solution here`, `        pass`];
+      for (const m of sig.methods || []) {
+        const params = m.parameters.map((p) => p.name).join(", ");
+        lines.push("", `    def ${m.name}(self${params ? ", " + params : ""}):`, `        # your solution here`, `        pass`);
+      }
+      return lines.join("\n") + "\n";
+    }
     const params = sig.parameters.map((p) => p.name).join(", ");
     return `def ${sig.name}(${params}):\n    # your solution here\n    pass\n`;
   }
@@ -409,13 +427,20 @@
 
     els.testCaseList.innerHTML = "";
     const descriptionById = Object.fromEntries(contract.test_cases.map((c) => [c.id, c.description]));
+    const operationsCountById = Object.fromEntries(
+      contract.test_cases.map((c) => [c.id, c.operations ? c.operations.length : null])
+    );
     for (const c of suite.test_cases) {
       const li = document.createElement("li");
       const desc = descriptionById[c.id] ? ` — ${descriptionById[c.id]}` : "";
       if (c.verified) {
         li.textContent = `✓ ${c.id} (${c.category})${desc}`;
       } else {
-        li.textContent = `✗ ${c.id} (${c.category})${desc} — reference solution errored: ${c.error}`;
+        const totalOps = operationsCountById[c.id];
+        // c.operations holds only the steps that ran before the failing one — see
+        // routers/verify.py — so this shows exactly how far the sequence got.
+        const stepProgress = totalOps != null ? ` (succeeded ${c.operations.length}/${totalOps} steps)` : "";
+        li.textContent = `✗ ${c.id} (${c.category})${desc} — reference solution errored: ${c.error}${stepProgress}`;
       }
       els.testCaseList.appendChild(li);
     }
@@ -460,9 +485,26 @@
       if (!r.passed) {
         const detail = document.createElement("div");
         detail.className = "result-detail";
-        detail.textContent = r.error
-          ? `input: ${JSON.stringify(r.input)}\nerror: ${r.error}`
-          : `input: ${JSON.stringify(r.input)}\nyour output: ${JSON.stringify(r.actual_output)}\nexpected: ${JSON.stringify(r.expected_output)}`;
+        if (r.steps) {
+          // "class"-kind case: walk the operation sequence. r.steps holds only the
+          // steps that actually ran (see routers/submissions.py) — a step count short
+          // of what the problem defines means a later call crashed and was never tried.
+          const lines = [`input: ${JSON.stringify(r.input)}`];
+          for (const s of r.steps) {
+            const call = `${s.method}(${JSON.stringify(s.args)})`;
+            lines.push(
+              s.error
+                ? `✗ ${call} — error: ${s.error}`
+                : `${s.passed ? "✓" : "✗"} ${call} -> your output: ${JSON.stringify(s.actual_output)}, expected: ${JSON.stringify(s.expected_output)}`
+            );
+          }
+          if (r.error && r.steps.length === 0) lines.push(`error: ${r.error}`); // constructor itself failed
+          detail.textContent = lines.join("\n");
+        } else {
+          detail.textContent = r.error
+            ? `input: ${JSON.stringify(r.input)}\nerror: ${r.error}`
+            : `input: ${JSON.stringify(r.input)}\nyour output: ${JSON.stringify(r.actual_output)}\nexpected: ${JSON.stringify(r.expected_output)}`;
+        }
         li.appendChild(detail);
       }
       els.resultsList.appendChild(li);

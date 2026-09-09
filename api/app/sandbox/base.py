@@ -25,8 +25,20 @@ class SandboxRunner:
     def _command(self) -> list[str]:
         raise NotImplementedError
 
-    def run(self, code: str, entry_point: str, args: dict[str, Any], timeout: float) -> RunResult:
-        payload = json.dumps({"code": code, "entry_point": entry_point, "args": args})
+    def run(
+        self,
+        code: str,
+        entry_point: str,
+        args: dict[str, Any],
+        timeout: float,
+        operations: list[dict[str, Any]] | None = None,
+    ) -> RunResult:
+        # `operations` present means `entry_point` is a class: `args` are constructor
+        # kwargs, and the harness runs each operation against the built instance in
+        # turn, returning `result` as a list of per-step envelopes instead of one value
+        # — see harness_script.py. The envelope this method parses is unchanged either
+        # way: still exactly one {"ok":.., "result"|"error":..} line.
+        payload = json.dumps({"code": code, "entry_point": entry_point, "args": args, "operations": operations})
         try:
             proc = subprocess.run(
                 self._command(),

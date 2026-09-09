@@ -1,0 +1,94 @@
+{
+  "problem": {
+    "title": "Graph (adjacency matrix)",
+    "difficulty": "medium",
+    "topics": ["graph", "design"],
+    "normalized_statement": "Implement an undirected Graph class backed by an adjacency matrix, constructed from a vertex list and an edge list, supporting has_edge and get_vertices queries."
+  },
+  "function_signature": {
+    "name": "Graph",
+    "kind": "class",
+    "parameters": [
+      { "name": "vertices", "type": "List" },
+      { "name": "edges", "type": "List[tuple]" }
+    ],
+    "return_type": "Graph",
+    "methods": [
+      {
+        "name": "has_edge",
+        "parameters": [{ "name": "u", "type": "Any" }, { "name": "v", "type": "Any" }],
+        "return_type": "bool"
+      },
+      { "name": "get_vertices", "parameters": [], "return_type": "List" }
+    ]
+  },
+  "constraints": {
+    "raw": "Vertices are hashable and unique. Edges are undirected: if (u,v) is present, so is (v,u). Invalid edges referencing unknown vertices are ignored.",
+    "input_bounds": { "num_vertices": "0 to 1000" }
+  },
+  "reference_solution": {
+    "language": "python",
+    "code": "class Graph:\n    def __init__(self, vertices, edges):\n        self._vertices = list(vertices)\n        self._index = {v: i for i, v in enumerate(self._vertices)}\n        n = len(self._vertices)\n        self._matrix = [[False] * n for _ in range(n)]\n        for u, v in edges:\n            if u in self._index and v in self._index:\n                i, j = self._index[u], self._index[v]\n                self._matrix[i][j] = True\n                self._matrix[j][i] = True\n\n    def has_edge(self, u, v):\n        if u not in self._index or v not in self._index:\n            return False\n        i, j = self._index[u], self._index[v]\n        return self._matrix[i][j]\n\n    def get_vertices(self):\n        return list(self._vertices)\n",
+    "expected_time_complexity": "O(V^2)",
+    "expected_space_complexity": "O(V^2)"
+  },
+  "test_cases": [
+    {
+      "id": "triangle",
+      "category": "example",
+      "description": "triangle graph, every pair connected",
+      "input_mode": "literal",
+      "input": { "vertices": [1, 2, 3], "edges": [[1, 2], [2, 3], [1, 3]] },
+      "operations": [
+        { "method": "has_edge", "args": { "u": 1, "v": 2 } },
+        { "method": "has_edge", "args": { "u": 1, "v": 3 } },
+        { "method": "has_edge", "args": { "u": 2, "v": 3 } },
+        { "method": "get_vertices", "args": {} }
+      ]
+    },
+    {
+      "id": "no_edge_between_pair",
+      "category": "edge",
+      "description": "query a pair of vertices with no edge between them",
+      "input_mode": "literal",
+      "input": { "vertices": ["A", "B", "C"], "edges": [["A", "B"]] },
+      "operations": [
+        { "method": "has_edge", "args": { "u": "A", "v": "C" } },
+        { "method": "has_edge", "args": { "u": "A", "v": "B" } }
+      ]
+    },
+    {
+      "id": "empty_graph",
+      "category": "edge",
+      "description": "zero vertices, zero edges",
+      "input_mode": "literal",
+      "input": { "vertices": [], "edges": [] },
+      "operations": [{ "method": "get_vertices", "args": {} }]
+    },
+    {
+      "id": "self_loop",
+      "category": "edge",
+      "description": "self-loop edge is allowed and queryable",
+      "input_mode": "literal",
+      "input": { "vertices": [1, 2], "edges": [[1, 1]] },
+      "operations": [
+        { "method": "has_edge", "args": { "u": 1, "v": 1 } },
+        { "method": "has_edge", "args": { "u": 1, "v": 2 } }
+      ]
+    },
+    {
+      "id": "unknown_vertex_query",
+      "category": "edge",
+      "description": "querying has_edge with a vertex not in the graph should not crash",
+      "input_mode": "literal",
+      "input": { "vertices": [1, 2], "edges": [[1, 2]] },
+      "operations": [{ "method": "has_edge", "args": { "u": 1, "v": 99 } }]
+    }
+  ],
+  "generation_meta": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "prompt_version": "v1",
+    "warnings": []
+  }
+}
