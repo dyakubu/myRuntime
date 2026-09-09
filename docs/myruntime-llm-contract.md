@@ -138,7 +138,20 @@ Most problems are `"function"` kind (the shape above): call one function once, c
 }
 ```
 
-One rule applies to both kinds: only JSON-native types (`int`/`float`/`str`/`bool`/`list`/`dict`/`None`) may cross a parameter or return boundary — a tree or linked list is represented as a plain nested list, with any node objects built privately inside `reference_solution.code`, never passed in or returned directly.
+### Wire types (enforced, not advisory)
+
+Every value crosses a JSON boundary — browser → `/api/verify` → the harness's stdin, and back. So a declared type that JSON can't represent is a promise the pipeline cannot keep. `function_signature` types are therefore validated against a fixed grammar in `api/app/wire_types.py`, and a signature outside it is **rejected with 422** rather than trusted:
+
+```
+T := int | float | str | bool | None | Any | List[T] | Dict[str, T] | Optional[T] | T | None
+```
+
+- **`Dict` keys must be `str`.** JSON object keys are always strings, so `Dict[int, List[int]]` arrives with string keys — a solution indexing it by `int` gets a `KeyError` while the statement swore the keys were integers. Key by `str`, or use an index-based `List[...]`.
+- **`Tuple`, `Set` and bare class names have no JSON equivalent.** Use `List[...]` at the boundary and convert inside `reference_solution.code` — a tree or linked list is passed as a plain nested list, with node objects built privately.
+- **`normalized_statement` must describe what the solver actually receives.** With types enforced, the prose only has to describe something guaranteed.
+- A `"class"` problem's own `return_type` is exempt: it names the class, and the constructed instance never leaves the sandbox. Its constructor parameters and every method signature are still checked, since those do cross.
+
+This is deliberately enforced rather than left to the prompt. The earlier prose rule ("only JSON-native types") read as *satisfied* by `Dict[int, ...]` — both `dict` and `int` are JSON-native — which is precisely how an unrepresentable signature reached a user. The harness applies the matching guard on the way out, rejecting a returned `set`/`tuple`/object with a message naming the type.
 
 ---
 

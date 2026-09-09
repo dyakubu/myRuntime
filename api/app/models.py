@@ -1,6 +1,8 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+from .wire_types import explain, is_wire_type
 
 
 class Parameter(BaseModel):
@@ -23,6 +25,35 @@ class FunctionSignature(BaseModel):
     # `Operation` below. Everything defaults to plain-function behavior unchanged.
     kind: Literal["function", "class"] = "function"
     methods: list[MethodSignature] | None = None
+
+    @model_validator(mode="after")
+    def _types_must_survive_json(self):
+        """Every type that actually crosses the sandbox boundary has to be representable
+        in JSON — see wire_types.py. Rejecting here rather than trusting the prompt is
+        what turns "the model was told not to" into "the model cannot"."""
+        problems = []
+
+        def check(label: str, declared: str) -> None:
+            if not is_wire_type(declared):
+                problems.append(f"{label}: {explain(declared)}")
+
+        for p in self.parameters:
+            check(f"parameter {p.name!r}", p.type)
+
+        # A "class" problem's return_type is the class name itself and never gets
+        # serialized — the constructed instance stays inside the sandbox and only its
+        # methods' results come back. Its methods, though, do cross the boundary.
+        if self.kind == "function":
+            check("return_type", self.return_type)
+
+        for m in self.methods or []:
+            for p in m.parameters:
+                check(f"method {m.name!r} parameter {p.name!r}", p.type)
+            check(f"method {m.name!r} return_type", m.return_type)
+
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
 
 
 class ReferenceSolution(BaseModel):

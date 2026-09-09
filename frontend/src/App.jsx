@@ -3,6 +3,7 @@ import { PROVIDERS, generateContract } from "./lib/providers.js";
 import { Settings, Cache } from "./lib/storage.js";
 import { runVerify, runSubmission } from "./lib/api.js";
 import { stubCode } from "./lib/stubs.js";
+import { checkSignature } from "./lib/wireTypes.js";
 import { exampleContract } from "./lib/exampleContract.js";
 import LandingScreen from "./components/LandingScreen.jsx";
 import SolveView from "./components/SolveView.jsx";
@@ -198,6 +199,8 @@ function validateContract(json) {
   }
   const sig = json.function_signature;
   if (!sig?.name) throw new Error("function_signature.name is missing");
+  const typeProblems = checkSignature(sig);
+  if (typeProblems.length) throw new Error(typeProblems.join("; "));
   if (sig.kind === "class") {
     if (!Array.isArray(sig.methods) || sig.methods.length === 0) {
       throw new Error('a "class" problem must declare at least one method in function_signature.methods');

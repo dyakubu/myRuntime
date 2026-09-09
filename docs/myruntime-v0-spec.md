@@ -128,6 +128,7 @@ Access control for both supported providers is by API key, not by origin — nei
 - **Runs successfully** → `expected_output` set to whatever it returned, case marked `verified: true`.
 - **Raises or times out** → case excluded from the suite returned to the user, suite marked `partial: true`, an `error` message attached, and a `solution_self_check_error` event logged.
 - This is strictly weaker than the original cross-model design — it can catch "the reference solution is broken" but not "the reference solution runs cleanly and is just wrong." That gap is exactly what LLM B was for, and exactly why it's listed as a deferred v1 feature rather than declared solved.
+- **Because of that gap, anything checkable deterministically must be checked deterministically rather than left to the prompt.** Declared parameter/return types are validated against the JSON-representable grammar in `api/app/wire_types.py` before any sandbox run (see the contract doc's "Wire types" section), and the harness rejects unrepresentable return values on the way out. The motivating incident: a `Dict[int, List[int]]` signature arrived with string keys, and a `.get()`-style reference solution didn't crash on it — it silently returned `False` for a graph that plainly had a path, canonizing a wrong `expected_output` as ground truth. The self-check could not have caught that; the type gate makes it unreachable.
 
 ---
 

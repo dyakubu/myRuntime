@@ -9,8 +9,8 @@
     "name": "Graph",
     "kind": "class",
     "parameters": [
-      { "name": "vertices", "type": "List" },
-      { "name": "edges", "type": "List[tuple]" }
+      { "name": "vertices", "type": "List[Any]" },
+      { "name": "edges", "type": "List[List[Any]]" }
     ],
     "return_type": "Graph",
     "methods": [

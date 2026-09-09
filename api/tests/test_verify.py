@@ -49,6 +49,34 @@ def test_verify_generated_case_uses_seeded_length():
     assert stress["verified"] is True
 
 
+def test_verify_rejects_int_keyed_dict_parameter():
+    """JSON object keys are always strings, so Dict[int, ...] promises the solver
+    something the pipeline can't deliver — it must be rejected at the boundary rather
+    than silently arriving with string keys."""
+    broken = copy.deepcopy(FIXTURE)
+    broken["function_signature"]["parameters"] = [{"name": "graph", "type": "Dict[int, List[int]]"}]
+    resp = client.post("/api/verify", json=broken)
+    assert resp.status_code == 422
+    detail = " ".join(resp.json()["detail"])
+    assert "keys are always strings" in detail
+
+
+def test_verify_rejects_unrepresentable_types():
+    for bad in ("Set[int]", "Tuple[int, int]", "TreeNode"):
+        broken = copy.deepcopy(FIXTURE)
+        broken["function_signature"]["return_type"] = bad
+        resp = client.post("/api/verify", json=broken)
+        assert resp.status_code == 422, f"{bad} should be rejected"
+
+
+def test_verify_accepts_representable_types():
+    for good in ("List[List[int]]", "Dict[str, List[int]]", "Optional[int]", "Any"):
+        ok = copy.deepcopy(FIXTURE)
+        ok["function_signature"]["return_type"] = good
+        resp = client.post("/api/verify", json=ok)
+        assert resp.status_code == 200, f"{good} should be accepted"
+
+
 def test_verify_unbuildable_case_is_a_case_error_not_a_500():
     """A literal case with no input is schema-valid but can't be materialized — it must
     come back as a per-case error, not an unhandled 500 with an empty body."""

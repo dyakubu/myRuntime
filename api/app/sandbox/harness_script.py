@@ -25,13 +25,26 @@ import json
 import sys
 
 
+def _check_returnable(value: object) -> object:
+    """Results are compared and shipped as JSON, so a set/tuple/object return can't be
+    graded. Raise here with a message naming the offending type, rather than letting a
+    bare 'Object of type X is not JSON serializable' surface from the outer envelope."""
+    try:
+        json.dumps(value)
+    except (TypeError, ValueError):
+        raise TypeError(
+            f"returned a {type(value).__name__}, which can't cross the sandbox boundary — "
+            "return a list, dict, or plain value instead"
+        ) from None
+    return value
+
+
 def _run_operations(built: object, operations: list[dict]) -> list[dict]:
     steps = []
     for op in operations:
         try:
             method = getattr(built, op["method"])
-            step_result = method(**op.get("args", {}))
-            json.dumps(step_result)  # fail here, not at the outer envelope, if unserializable
+            step_result = _check_returnable(method(**op.get("args", {})))
             steps.append({"ok": True, "result": step_result})
         except Exception as exc:  # noqa: BLE001 - reported per-step, not fatal to earlier steps
             steps.append({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
@@ -53,7 +66,10 @@ def main() -> None:
             exec(code, namespace)  # noqa: S102 - this is the whole point of a code runner
             target = namespace[entry_point]
             built = target(**args)
-            result = _run_operations(built, operations) if operations is not None else built
+            # Same guard on both paths: a plain function's return value has to be
+            # representable too, and used to fail as an opaque error from json.dumps
+            # below rather than something the solver could act on.
+            result = _run_operations(built, operations) if operations is not None else _check_returnable(built)
         print(json.dumps({"ok": True, "result": result}))
     except Exception as exc:  # noqa: BLE001 - deliberately broad, reports back any failure
         print(json.dumps({"ok": False, "error": f"{type(exc).__name__}: {exc}"}))
