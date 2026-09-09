@@ -4,6 +4,9 @@ __pycache__/
 api/.venv/
 .pytest_cache/
 .env
-node_modules
-dist 
-lib
+
+# Frontend build artifacts. Anchored to the directory rather than bare patterns: an
+# unanchored name matches at every depth, which is how a bare `lib` silently excluded
+# frontend/src/lib/ (all of App.jsx's imports) and broke the CI build.
+/frontend/node_modules/
+/frontend/dist/
