@@ -89,3 +89,9 @@ def test_verify_unbuildable_case_is_a_case_error_not_a_500():
     case = body["test_cases"][0]
     assert case["verified"] is False
     assert "no input" in case["error"]
+
+
+def test_health_endpoint_is_at_api_health():
+    """Not /healthz: Google Frontend shadows that exact path on run.app domains, so the
+    route would never reach the container in production."""
+    assert client.get("/api/health").json() == {"status": "ok"}

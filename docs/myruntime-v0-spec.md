@@ -72,7 +72,7 @@ This list exists so scope creep has something concrete to point at. If a feature
 │   → sandbox: run user code   │
 │   → returns pass/fail        │
 │                              │
-│ GET /healthz                 │
+│ GET /api/health              │
 │                              │
 │ structured JSON logs → stdout│
 │   → Cloud Logging (auto)     │
@@ -99,8 +99,8 @@ Called on every "Run" click while the user iterates on their code. No LLM calls 
 - **In:** user's code, the checked test suite from `/verify` (client sends it back each time — backend is stateless, holds nothing)
 - **Out:** pass/fail per test case; for failing cases, input / actual output / expected output; runtime per case
 
-### `GET /healthz`
-Trivial liveness check for Cloud Run.
+### `GET /api/health`
+Trivial liveness check. Deliberately **not** `/healthz`: Google Frontend shadows that exact path on `run.app` domains and returns its own 404 before the request reaches the container, which makes it useless for external uptime monitoring. Verified by observing that `/healthz/`, `/healthz2` and `/api/health` all reach the app while `/healthz` alone does not.
 
 ---
 

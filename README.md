@@ -4,6 +4,8 @@ Paste any coding problem, get a LeetCode-style environment for it.
 
 **Live:** https://myruntime-api-352837256578.europe-west1.run.app/
 
+**Bring your own key.** Problem generation runs in your browser against your own Anthropic or Gemini API key. Nothing to sign up for, and no key is stored on the server. See [Bring your own key](#bring-your-own-key) for the details, or press "Load example" on the live site to try it without one.
+
 Practice problems from a textbook, a blog post, or an interview you just failed are not on LeetCode. MyRuntime takes that raw problem text and turns it into a runnable exercise: a function signature, a reference solution, and a test suite that has been executed in a sandbox before you ever see it. Then it gives you an editor and grades your attempt against it.
 
 ## How it works
@@ -34,7 +36,30 @@ Practice problems from a textbook, a blog post, or an interview you just failed 
   Submit -> grades the full suite, reveals failures
 ```
 
-The backend never calls an LLM. Generation happens entirely client-side with the user's own key, so no provider credential is ever held server-side.
+## Bring your own key
+
+**MyRuntime does not ship with an API key and does not have one.** You supply your own, and generation runs entirely in your browser.
+
+Concretely:
+
+* You paste your own Anthropic or Gemini key into the Settings panel.
+* It is stored in `localStorage`, scoped to the origin serving the frontend, and stays on your machine.
+* It is attached only to requests going directly from your browser to the provider's API.
+* It is never sent to `myruntime-api`, never logged, and never persisted server-side.
+* The backend holds no LLM credential of its own and makes no LLM calls at all. It only runs code in a sandbox.
+
+That means running costs are yours and are billed by your provider, and there is nothing to sign up for here. If you want to try the app without a key, "Load example" runs a built-in Two Sum problem through the real verification and grading path, no key required.
+
+### Why only Anthropic and Gemini
+
+Both allow key-authenticated calls straight from browser JavaScript, verified by testing real requests rather than trusting documentation:
+
+* **Anthropic** works once the request carries `anthropic-dangerous-direct-browser-access: true`. Without that header Anthropic still processes the request, but the response omits `Access-Control-Allow-Origin`, so the browser discards it before any JavaScript can read it.
+* **Gemini** works with a plain `fetch()`. `generativelanguage.googleapis.com` reflects the requesting origin back in `Access-Control-Allow-Origin`.
+
+**OpenAI is not supported, and cannot be without changing the architecture.** Its preflight `OPTIONS` response looks permissive, but the actual `POST` response carries no `Access-Control-Allow-Origin` header at all, so the browser blocks reading the response even though the request reached OpenAI's servers. Supporting it would require a backend relay that forwards your key through this server on every request, which would break the property the whole design rests on: that your key never leaves your browser. That tradeoff is deliberately not made.
+
+Neither supported provider gates access by origin, only by key, so no domain allowlisting is needed anywhere.
 
 ## Architecture
 
@@ -43,32 +68,12 @@ The backend never calls an LLM. Generation happens entirely client-side with the
 | API | FastAPI on Python 3.11, deployed to Cloud Run |
 | Frontend | React 18 + Vite, CodeMirror 6 editor |
 | Code execution | Cloud Run sandboxes (2nd-gen execution environment, `--sandbox-launcher`) |
-| Generation | Anthropic or Gemini, called directly from the browser |
+| Generation | Anthropic or Gemini, called directly from the browser with your own key |
 | Persistence | None. The backend is stateless; the client caches verified suites in IndexedDB |
 | Observability | Structured JSON logs to stdout, picked up by Cloud Logging |
 | CI/CD | Cloud Build trigger on push, building a multi-stage image |
 
 The API serves the built frontend itself, so production is single-origin and needs no CORS configuration.
-
-## Design decisions worth explaining
-
-**Untrusted code runs in a sandbox, and both sides are untrusted.** The user's submission is obviously untrusted, but so is the LLM's reference solution. Both go through the same Cloud Run sandbox, which blocks network egress by default, does not inherit the host container's environment, and cannot reach the parent process or the GCP metadata server. Google does not document a built-in execution timeout, so every invocation is wrapped in an app-level `subprocess` timeout.
-
-**Declared types are enforced, not decorative.** Every value crosses a JSON boundary on its way to the sandbox and back, so a signature declaring a type JSON cannot represent is a promise the pipeline cannot keep. `Dict[int, List[int]]` is the instructive case: JSON object keys are always strings, so it arrives with string keys and any solution indexing it by integer fails, while the problem statement swears the keys are integers. Signatures are validated against a fixed grammar (`api/app/wire_types.py`) and rejected at the boundary:
-
-```
-T := int | float | str | bool | None | Any | List[T] | Dict[str, T] | Optional[T]
-```
-
-Tuples, sets and class names are rejected for the same reason. The harness applies the matching check on the way out.
-
-**Bad generations correct themselves.** A malformed or rejected contract is not a dead end. The client feeds the model its own broken output plus the specific error and asks again, up to three attempts. Because validation errors are precise ("JSON object keys are always strings, so a dict must be keyed by str"), the model can usually fix its own signature. A suite where nothing verified is treated as a failed generation rather than cached.
-
-**The self-check is honest about what it cannot do.** Running the reference solution against its own test cases catches a solution that crashes. It cannot catch one that runs cleanly and is simply wrong. That gap is documented rather than papered over, which is exactly why anything checkable deterministically (types, serializability, representability) is checked deterministically instead of being left to a prompt.
-
-**Hidden tests stay hidden.** The verify response contains the reference solution and every expected output, but the UI renders only the 3 example cases. The generation prompt asks for an edge case covering every scenario the model can think of, each with a descriptive label, so listing them would hand over precisely the reasoning the exercise is meant to provoke. A hidden case reveals its input and expected output only when your solution fails it.
-
-**Time limits are a property of the submission.** An infinite loop hangs every test case identically, so grading stops at the first timeout instead of spending `timeout x N` seconds proving the same point. Anything the solution printed comes back with the result, including output printed before a crash.
 
 ## Running locally
 
@@ -107,7 +112,7 @@ Pushing to `main` triggers a Cloud Build job that builds the multi-stage image (
 
 The service needs `--sandbox-launcher` on the 2nd-generation execution environment and `RUNNER_BACKEND=cloud_run_sandbox`.
 
-One deployment quirk worth knowing: Google Frontend intercepts the exact path `/healthz` on `run.app` domains, returning Google's own 404 before the request reaches the container. The endpoint itself works locally and inside the container; only that exact public path is shadowed. `/healthz/` with a trailing slash reaches it normally.
+The liveness endpoint is `GET /api/health`, deliberately not the conventional `/healthz`. Google Frontend shadows that exact path on `run.app` domains and answers it with its own 404 before the request reaches the container, which makes it useless for external uptime monitoring. `/healthz/`, `/healthz2` and `/api/health` all reach the app, so the interception applies to that one literal path.
 
 ## Project layout
 
