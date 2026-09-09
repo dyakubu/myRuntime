@@ -47,3 +47,17 @@ def test_verify_generated_case_uses_seeded_length():
     stress = next(c for c in body["test_cases"] if c["id"] == "stress_large_n")
     assert len(stress["input"]["nums"]) == 10000
     assert stress["verified"] is True
+
+
+def test_verify_unbuildable_case_is_a_case_error_not_a_500():
+    """A literal case with no input is schema-valid but can't be materialized — it must
+    come back as a per-case error, not an unhandled 500 with an empty body."""
+    broken = copy.deepcopy(FIXTURE)
+    broken["test_cases"] = [{"id": "no_input", "category": "example", "input_mode": "literal"}]
+    resp = client.post("/api/verify", json=broken)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["verification_status"] == "partial"
+    case = body["test_cases"][0]
+    assert case["verified"] is False
+    assert "no input" in case["error"]

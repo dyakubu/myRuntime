@@ -35,7 +35,19 @@ def verify(payload: VerifyRequest) -> VerifyResponse:
     start = time.perf_counter()
 
     for case in payload.test_cases:
-        args = materialize_input(case)
+        # A case can be schema-valid yet unbuildable (input_mode "literal" with no
+        # input, an unknown generator type). That's bad model output, not a server
+        # fault — report it as a per-case error instead of raising a 500 whose empty
+        # body gives the client's retry loop nothing to feed back.
+        try:
+            args = materialize_input(case)
+        except ValueError as exc:
+            checked.append(
+                VerifiedTestCase(id=case.id, category=case.category, input={}, verified=False, error=str(exc))
+            )
+            _log_self_check_error(payload, case.id, case.category, str(exc), {})
+            continue
+
         # is-not-None, not truthiness: an empty operations list ([]) is still a stateful
         # case (construct-only, no queries) and must not fall through to the plain-
         # function path below just because it's falsy.

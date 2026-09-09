@@ -49,10 +49,12 @@ app.include_router(verify.router)
 app.include_router(submissions.router)
 
 # Simplest answer to "where does the frontend live" (still open per
-# docs/myruntime-v0-spec.md §3/§11): serve it from this same service when the web/
-# directory is sitting next to api/, so local dev and a single-Cloud-Run-service deploy
-# both work with zero CORS setup. Nothing stops the frontend moving to its own static
-# host later — CORS_ORIGINS exists for exactly that.
-_WEB_DIR = Path(__file__).resolve().parents[2] / "web"
+# docs/myruntime-v0-spec.md §3/§11): serve the built React app from this same service,
+# so a single-Cloud-Run-service deploy works with zero CORS setup. In local dev the Vite
+# server proxies /api here instead (frontend/vite.config.js), so this mount being absent
+# before a build is fine. Nothing stops the frontend moving to its own static host later
+# — CORS_ORIGINS exists for exactly that.
+# No SPA catch-all is needed: view switching is React state, not client-side routing.
+_WEB_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if _WEB_DIR.is_dir():
     app.mount("/", StaticFiles(directory=str(_WEB_DIR), html=True), name="web")

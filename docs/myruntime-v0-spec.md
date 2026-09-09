@@ -33,7 +33,7 @@ This list exists so scope creep has something concrete to point at. If a feature
 ## 3. Tech stack & architecture
 
 - **Backend:** FastAPI, deployed to Cloud Run (`min-instances=0`, `max-instances=1` — scale-to-zero is fine now that metrics don't live in process memory, see §7). Holds no LLM API key at all in v0 (LLM A is client-side/BYOK, LLM B doesn't exist yet) — its only job is running untrusted Python through **Cloud Run sandboxes**. See §8 and the companion `myruntime-cloud-run-research.md` for how that works and what it relies on.
-- **Frontend:** plain HTML/CSS/vanilla JavaScript — no framework, no build step, nothing overcomplicated. Light/dark theme toggle, **defaulting to dark**. Where the frontend is hosted is **not yet decided** — it's out of scope for this doc. Build it as a static site that talks to the API over HTTPS from wherever it ends up, not as something that assumes a specific host or same-origin setup.
+- **Frontend:** React + Vite with a CodeMirror 6 editor, in `frontend/` — see §9 for why this replaced the original vanilla-JS/no-build-step plan. Light/dark theme toggle, **defaulting to dark**. It builds to static assets that the API serves itself (same-origin, no CORS setup); `VITE_API_BASE` is the escape hatch if the frontend ever moves to its own host.
 - **Cross-origin:** since frontend hosting isn't decided, don't assume same-origin. Enable CORS on the FastAPI app for the frontend's origin(s). If a same-origin setup happens later (e.g. a reverse proxy in front of both, or the API serving the static files itself), CORS config can be relaxed then — but the backend shouldn't be built assuming that from the start.
 
 ```
@@ -170,19 +170,27 @@ Client caches `/verify` responses in **IndexedDB**, keyed by a content hash (SHA
 
 ## 9. UI
 
-Keep it simple: plain HTML/CSS/vanilla JS, no framework, no build tooling. This is a single-user personal tool, not a product — resist the urge to overbuild the frontend.
+**React + Vite, with CodeMirror 6 as the editor**, in `frontend/`. This revises the original "vanilla JS, no build tooling" instruction: the product §1 promises is a LeetCode-style *solve environment*, and the two things that actually make it one — a real code editor and a stateful run/results console — are exactly what a plain `<textarea>` and hand-rolled DOM updates can't deliver. A `<textarea>` in particular can't do syntax highlighting or even hold the Tab key, which is disqualifying for the tool's core interaction.
 
-- Light/dark theme toggle, **defaulting to dark**. A simple CSS custom-properties + a `data-theme` attribute (or class) toggle is enough; persist the choice in `localStorage` so it survives a reload.
-- Provider / model / API key settings panel for LLM A (see §5) — provider and model as restricted dropdowns, key as a password-style input, all persisted in `localStorage`.
-- Hosting for this frontend is not yet decided (see §3) — build it as a static site with no assumptions baked in about its origin relative to the API.
+- Built by Vite into `frontend/dist` and served by the API itself (`api/app/main.py` mounts it at `/`), so production is same-origin and needs no CORS setup. `npm run dev` proxies `/api` to a local uvicorn so dev matches prod. The Dockerfile builds the frontend in a `node:22-alpine` stage and copies only `dist` into the Python image.
+- No client-side router — the landing/solve switch is React state, so `StaticFiles(html=True)` is sufficient and no SPA catch-all is needed.
+- Light/dark theme toggle, **defaulting to dark**, via CSS custom properties + a `data-theme` attribute, persisted in `localStorage`.
+- Provider / model / API key settings panel for LLM A (see §5) — restricted dropdowns, password-style key input, persisted in `localStorage`.
+
+### Layout
+
+Landing screen (paste a problem → Generate, or load the built-in example) gives way to the solve view: problem and examples on the left, editor over a tabbed console (**Testcase** / **Result**) on the right, with a draggable split.
+
+**Run** grades only the visible example cases — a fast feedback loop. **Submit** grades the full verified suite. Both post to the same stateless `/api/submissions`; the only difference is which `test_cases` the client sends.
 
 ### Display policy (client-side convention, not a security boundary)
 
-The `/verify` response contains the reference solution and all expected outputs — nothing is technically hidden, since it's a single-user tool with no adversary. The client should still choose *not to render* certain things by default:
+The `/verify` response contains the reference solution and every expected output — nothing is technically hidden, since it's a single-user tool with no adversary. The client still chooses not to render most of it, because seeing it destroys the exercise:
 
-- Reference solution code: collapsed, revealed only via an explicit "Show solution" action
-- Expected outputs for cases not yet run: not shown until the user submits
-- On a failing case: show input / your output / expected output for *that case* — normal debugging feedback, not a spoiler
+- **Reference solution: never rendered.** Not collapsed behind a disclosure — simply not in the UI.
+- **Only `category === "example"` cases are shown** (the prompt guarantees exactly 3), rendered as Example 1/2/3 with input and expected output, the way LeetCode does. The count of hidden tests is shown; their inputs, descriptions and ids are not.
+- Edge-case `description` fields are especially sensitive: the prompt asks for one edge case per scenario the model can think of, each with a specific label ("negative value in the middle of the array"). Listing them hands over precisely the reasoning the exercise exists to provoke.
+- **On a failing case — including a hidden one — show input / your output / expected output** for that case. Finding out what broke you is the point of Submit. Passing cases stay collapsed so a green run doesn't dump the whole suite.
 
 ---
 

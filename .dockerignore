@@ -3,3 +3,7 @@
 api/.venv
 api/tests
 .git
+# The frontend is built inside the image (Dockerfile stage 1) — never ship the host's
+# node_modules or a stale local dist into the build context.
+frontend/node_modules
+frontend/dist

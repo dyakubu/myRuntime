@@ -1,3 +1,13 @@
+# Stage 1: build the React frontend. Its output is static — nothing from this stage
+# ships in the final image except frontend/dist, so node never reaches production.
+FROM node:22-alpine AS frontend-build
+WORKDIR /build
+# Copy manifests first so `npm ci` is cached unless dependencies actually change.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim
 
 # The Cloud Run sandbox (docs/myruntime-cloud-run-research.md) mounts a read-only view
@@ -14,7 +24,9 @@ COPY api/requirements.txt api/requirements.txt
 RUN pip install --no-cache-dir -r api/requirements.txt
 
 COPY api/app api/app
-COPY web web
+# main.py serves this at "/" — the path must stay /app/frontend/dist to match its
+# parents[2]/"frontend"/"dist" resolution.
+COPY --from=frontend-build /build/dist frontend/dist
 
 WORKDIR /app/api
 
